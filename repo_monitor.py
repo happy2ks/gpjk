@@ -113,10 +113,10 @@ def get_fred_data(fred_code):
 
 def main():
     print(f"开始执行 2026 债务高墙监控任务... [{datetime.now()}]")
-    
+
     # 1. 获取 DVP 成交量 (对冲基金的子弹)
     dvp_vol = fetch_ofr_data("dvp-service-transaction-volume")
-    
+
     # 2. 获取 SOFR-EFFR 利差 (直接获取计算好的利差数据更稳)
     # 也可以分别获取 sofr 和 effr 再计算
     sofr_data = fetch_ofr_data("secured-overnight-financing-rate-sofr")
