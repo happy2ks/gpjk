@@ -26,6 +26,14 @@ SERIES_MAPPING = {
     "effr": "EFFR"
 }
 
+# 全球指数映射（Yahoo Finance 符号）
+INDEX_SYMBOLS = {
+    "韩国 KOSPI": "^KS11",
+    "日本 日经225": "^N225",
+    "台湾 加权指数": "^TWII",
+    "恒生 恒生指数": "^HSI",
+}
+
 def fetch_interest_rate_data(series_code):
     """
     从多个数据源获取利率数据（SOFR 或 EFFR）
@@ -348,6 +356,48 @@ def get_btc_stats():
         logging.error(f"获取 BTC/USDT 数据失败: {e}")
         return None
 
+def get_index_data(yahoo_symbol, label):
+    """从 Yahoo Finance 获取全球指数最新行情"""
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}?interval=1d&range=5d"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+
+        result = data['chart']['result'][0]
+        quotes = result['indicators']['quote'][0]
+        timestamps = result['timestamp']
+
+        closes = quotes['close']
+        # 过滤掉 None 值
+        valid_data = [(ts, close) for ts, close in zip(timestamps, closes) if close is not None]
+
+        if len(valid_data) < 2:
+            logging.warning(f"获取指数 {label} ({yahoo_symbol}) 数据不足")
+            return None
+
+        latest_ts, latest_close = valid_data[-1]
+        _, prev_close = valid_data[-2]
+
+        change = latest_close - prev_close
+        change_pct = (change / prev_close) * 100
+        latest_date = datetime.fromtimestamp(latest_ts).strftime('%Y-%m-%d')
+
+        return {
+            'label': label,
+            'symbol': yahoo_symbol,
+            'price': latest_close,
+            'change': change,
+            'change_pct': change_pct,
+            'date': latest_date
+        }
+    except Exception as e:
+        logging.error(f"获取指数 {label} ({yahoo_symbol}) 数据失败: {e}")
+        return None
+
 def generate_market_report():
     """生成市场快报"""
     print(f"开始生成市场快报... [{datetime.now()}]")
@@ -359,6 +409,11 @@ def generate_market_report():
 
     # 2. 获取 BTC/USDT 数据
     btc_stats = get_btc_stats()
+
+    # 3. 获取全球指数数据
+    index_data = {}
+    for label, yahoo_symbol in INDEX_SYMBOLS.items():
+        index_data[label] = get_index_data(yahoo_symbol, label)
 
     # 准备报告内容
     report_lines = []
@@ -427,6 +482,22 @@ def generate_market_report():
         report_lines.append("BTC/USDT: 数据不可用")
 
     report_lines.append("")
+
+    # 全球指数部分
+    report_lines.append("--- 全球指数 ---")
+
+    for label in INDEX_SYMBOLS.keys():
+        data = index_data.get(label)
+        if data is not None:
+            arrow = "▲" if data['change'] >= 0 else "▼"
+            report_lines.append(
+                f"{data['label']} ({data['date']}): {data['price']:,.2f}  "
+                f"{arrow} {data['change_pct']:+.2f}%"
+            )
+        else:
+            report_lines.append(f"{label}: 数据不可用")
+
+    report_lines.append("")
     report_lines.append("=" * 50)
 
     # 打印报告
@@ -434,10 +505,17 @@ def generate_market_report():
     print(report)
 
     # 记录日志
+    index_log_parts = []
+    for label, data in index_data.items():
+        if data:
+            index_log_parts.append(f"{label}={data['price']:,.2f}")
+        else:
+            index_log_parts.append(f"{label}=N/A")
     logging.info(f"市场快报生成成功: SOFR={sofr_value if sofr_value else 'N/A'}, "
                  f"EFFR={effr_value if effr_value else 'N/A'}, "
                  f"美国10年国债={us_10y_value if us_10y_value else 'N/A'}%, "
-                 f"BTC价格={btc_stats['price'] if btc_stats else 'N/A'}")
+                 f"BTC价格={btc_stats['price'] if btc_stats else 'N/A'}, "
+                 f"指数={{{', '.join(index_log_parts)}}}")
 
 def main():
     """主函数"""
